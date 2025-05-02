@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // src/lib/actions.ts
 'use server';
 
@@ -6,6 +7,7 @@ import { createClient } from './supabase/server';
 import { z } from 'zod';
 import { DynamicVariable } from '@/types'; // <<< Импорт типа
 import { redirect } from 'next/navigation';
+import { User } from '@supabase/supabase-js';
 
 // Схема для одной динамической переменной
 const DynamicVariableSchema = z.object({
@@ -164,4 +166,172 @@ export async function duplicateTemplateAction(
     // Технически, из-за редиректа этот return не будет достигнут на клиенте,
     // но он нужен для соответствия типу Promise<ActionState>
     // return { message: 'Template duplicated successfully! Redirecting...', success: true };
+}
+
+// --- Вспомогательная функция для проверки прав ---
+async function checkEditPermissions(supabase: ReturnType<typeof createClient>): Promise<{ user: User|null; canEdit: boolean; errorState?: ActionState }> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+        return { user: null, canEdit: false, errorState: { message: 'Authentication required.', success: false } };
+    }
+    const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('can_edit_templates')
+        .eq('id', user.id)
+        .single();
+
+    if (profileError || !profile?.can_edit_templates) {
+        console.warn(`User ${user.id} permission check failed. Error: ${profileError?.message}`);
+        return { user, canEdit: false, errorState: { message: 'Permission denied.', success: false } };
+    }
+    return { user, canEdit: true };
+}
+
+
+// --- Экшен создания проекта ---
+const CreateProjectSchema = z.object({
+  name: z.string().min(1, { message: "Project name cannot be empty." }),
+  description: z.string().optional(),
+});
+
+export async function createProjectAction(
+  prevState: ActionState | null,
+  formData: FormData
+): Promise<ActionState> {
+    const supabase = createClient();
+    const permissionCheck = await checkEditPermissions(supabase);
+    if (permissionCheck.errorState) return permissionCheck.errorState;
+
+    const validatedFields = CreateProjectSchema.safeParse({
+        name: formData.get('name'),
+        description: formData.get('description'),
+    });
+
+    if (!validatedFields.success) {
+        return { message: 'Validation failed: ' + validatedFields.error.flatten().fieldErrors.name?.join(', '), success: false };
+    }
+
+    const { error } = await supabase
+        .from('projects')
+        .insert({
+            name: validatedFields.data.name,
+            description: validatedFields.data.description,
+            // created_at устанавливается по умолчанию
+        });
+
+    if (error) {
+        console.error("Create project error:", error);
+        return { message: `Database Error: Failed to create project. ${error.message}`, success: false };
+    }
+
+    revalidatePath('/projects', 'page'); // Ревалидируем список проектов
+    return { message: 'Project created successfully!', success: true };
+}
+
+// --- Экшен удаления проекта ---
+export async function deleteProjectAction(
+    projectId: string,
+    _prevState: ActionState | null,
+    _formData: FormData
+): Promise<ActionState> {
+    if (!projectId) return { message: 'Project ID is missing.', success: false };
+    const supabase = createClient();
+    const permissionCheck = await checkEditPermissions(supabase);
+    if (permissionCheck.errorState) return permissionCheck.errorState;
+
+    // Удаляем проект (RLS также должен проверять права на удаление, если настроен)
+    // ON DELETE CASCADE в схеме БД позаботится об удалении связанных шаблонов
+    const { error } = await supabase
+        .from('projects')
+        .delete()
+        .eq('id', projectId);
+
+    if (error) {
+        console.error("Delete project error:", error);
+        return { message: `Database Error: Failed to delete project. ${error.message}`, success: false };
+    }
+
+    revalidatePath('/projects', 'page'); // Ревалидируем список проектов
+    // Не редиректим, остаемся на странице проектов
+    return { message: 'Project deleted successfully.', success: true };
+}
+
+
+// --- Экшен создания шаблона ---
+const CreateTemplateSchema = z.object({
+  name: z.string().min(1, { message: "Template name cannot be empty." }),
+  projectId: z.string().uuid({ message: "Invalid Project ID." })
+});
+
+export async function createTemplateAction(
+  prevState: ActionState | null,
+  formData: FormData
+): Promise<ActionState> {
+    const supabase = createClient();
+    const permissionCheck = await checkEditPermissions(supabase);
+    if (permissionCheck.errorState) return permissionCheck.errorState;
+
+    const validatedFields = CreateTemplateSchema.safeParse({
+        name: formData.get('name'),
+        projectId: formData.get('projectId'),
+    });
+
+    if (!validatedFields.success) {
+        const errors = validatedFields.error.flatten().fieldErrors;
+        const message = errors.name?.join(', ') || errors.projectId?.join(', ') || 'Validation failed.';
+        return { message, success: false };
+    }
+
+    const { projectId, name } = validatedFields.data;
+
+    // Вставляем новый шаблон с пустыми данными
+    const { data: newTemplate, error } = await supabase
+        .from('templates')
+        .insert({
+            project_id: projectId,
+            name: name,
+            content: `<h1>{{title}}</h1>\n<p>Hello, {{name}}!</p>`, // Дефолтное содержимое
+            preview_data: { title: "Default Title", name: "World" }, // Дефолтные данные для превью
+            dynamic_variables: [], // Пустой массив по умолчанию
+        })
+        .select('id') // Запрашиваем ID созданного шаблона
+        .single();
+
+    if (error || !newTemplate) {
+        console.error("Create template error:", error);
+        return { message: `Database Error: Failed to create template. ${error?.message ?? ''}`, success: false };
+    }
+
+    revalidatePath(`/projects/${projectId}/templates`, 'page'); // Ревалидируем список шаблонов
+    redirect(`/projects/${projectId}/templates/${newTemplate.id}`); // Перенаправляем на страницу нового шаблона
+    // return { message: 'Template created successfully! Redirecting...', success: true }; // Этот return не будет достигнут из-за redirect
+}
+
+
+// --- Экшен удаления шаблона ---
+export async function deleteTemplateAction(
+    templateId: string,
+    projectId: string, // Нужен для ревалидации правильного пути
+    _prevState: ActionState | null,
+    _formData: FormData
+): Promise<ActionState> {
+    if (!templateId || !projectId) return { message: 'Template or Project ID is missing.', success: false };
+
+    const supabase = createClient();
+    const permissionCheck = await checkEditPermissions(supabase);
+    if (permissionCheck.errorState) return permissionCheck.errorState;
+
+    // Удаляем шаблон (RLS также должен проверять права)
+    const { error } = await supabase
+        .from('templates')
+        .delete()
+        .eq('id', templateId);
+
+    if (error) {
+        console.error("Delete template error:", error);
+        return { message: `Database Error: Failed to delete template. ${error.message}`, success: false };
+    }
+
+    revalidatePath(`/projects/${projectId}/templates`, 'page'); // Ревалидируем список шаблонов
+    return { message: 'Template deleted successfully.', success: true };
 }

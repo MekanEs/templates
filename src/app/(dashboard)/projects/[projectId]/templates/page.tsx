@@ -1,7 +1,9 @@
 // src/app/(dashboard)/projects/[projectId]/templates/page.tsx
 import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
-import { Template } from '@/types'; // Импортируем тип
+import { Template } from '@/types';
+import CreateTemplateForm from './_components/CreateTemplateForm'; // <<< Импорт формы
+import DeleteTemplateButton from './_components/DeleteTemplateButton'; // <<< Импорт кнопки удаления
 
 interface TemplatesPageProps {
   params: { projectId: string };
@@ -11,7 +13,20 @@ export default async function TemplatesPage({ params }: TemplatesPageProps) {
   const supabase = createClient();
   const { projectId } = params;
 
-  // Получаем информацию о проекте (опционально, для заголовка)
+  // <<< Получаем пользователя и его права >>>
+  const { data: { user } } = await supabase.auth.getUser();
+  let canEdit = false;
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('can_edit_templates')
+      .eq('id', user.id)
+      .single();
+    canEdit = profile?.can_edit_templates ?? false;
+  }
+  // <<< Конец получения прав >>>
+
+  // Получаем информацию о проекте
   const { data: projectData, error: projectError } = await supabase
     .from('projects')
     .select('name')
@@ -27,32 +42,34 @@ export default async function TemplatesPage({ params }: TemplatesPageProps) {
 
   if (projectError || templatesError) {
     console.error('Error fetching data:', projectError || templatesError);
-    // Обработка ошибок
   }
 
   return (
     <div className='container mx-auto p-4'>
       <Link href='/projects' className='text-blue-500 hover:underline mb-4 block'>
-        &larr; Back to Projects
+        ← Back to Projects
       </Link>
       <h1 className='text-2xl font-bold mb-4'>Templates for: {projectData?.name ?? 'Project'}</h1>
-      {/* Здесь можно добавить кнопку/форму для создания нового шаблона */}
+
+      {/* <<< Форма создания шаблона (только для админов) >>> */}
+      <CreateTemplateForm projectId={projectId} canEdit={canEdit} />
+
       <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
         {templates && templates.length > 0 ? (
           (templates as Template[]).map(
-            (
-              template, // Применяем тип
-            ) => (
-              <Link
-                href={`/projects/${projectId}/templates/${template.id}`}
-                key={template.id}
-                className='block p-4 border rounded hover:shadow-lg transition-shadow'
-              >
-                <h2 className='text-xl font-semibold'>{template.name}</h2>
-                <p className='text-sm text-gray-400 mt-2'>
-                  Updated: {new Date(template.updated_at).toLocaleString()}
-                </p>
-              </Link>
+            (template) => (
+              <div key={template.id} className="border rounded p-4 hover:shadow-lg transition-shadow relative"> {/* Обертка */}
+                <Link href={`/projects/${projectId}/templates/${template.id}`} className='block'>
+                  <h2 className='text-xl font-semibold'>{template.name}</h2>
+                  <p className='text-sm text-gray-400 mt-2'>
+                    Updated: {new Date(template.updated_at).toLocaleString()}
+                  </p>
+                </Link>
+                {/* <<< Кнопка удаления шаблона (только для админов) >>> */}
+                <div className="absolute top-2 right-2">
+                    <DeleteTemplateButton templateId={template.id} projectId={projectId} canEdit={canEdit} />
+                </div>
+              </div>
             ),
           )
         ) : (
