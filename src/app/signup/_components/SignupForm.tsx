@@ -63,7 +63,7 @@ export default function SignupForm() {
           {state.message}
         </p>
       )}
-
+<p className='text-sm text-center text-gray-500'>Only jetmail.cc accounts are allowed</p>
       <div>
         <SubmitButton />
       </div>

@@ -9,7 +9,7 @@ interface DynamicVariableInputsProps {
   onChange: (name: string, value: string) => void; // Функция для обновления state родителя
 }
 
-export default function DynamicVariableInputs({ variables, values, onChange }: DynamicVariableInputsProps) {
+export default function DynamicVariableInputs({ variables, values, onChange,  }: DynamicVariableInputsProps) {
   if (!variables || variables.length === 0) {
     return null; // Не рендерим ничего, если переменных нет
   }
@@ -17,7 +17,7 @@ export default function DynamicVariableInputs({ variables, values, onChange }: D
   return (
     <div className="p-4 border rounded bg-gray-50">
       <h3 className="text-lg font-semibold mb-3">Fill Placeholders</h3>
-      <div className="space-y-3">
+      <div className={`space-y-3`}>
         {variables.map((variable) => (
           <div key={variable.name}>
             <label htmlFor={`dyn-var-${variable.name}`} className="block text-sm font-medium text-gray-700 mb-1">

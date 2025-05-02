@@ -9,13 +9,14 @@ interface TemplateEditorProps {
 
 export default function TemplateEditor({ value, onChange,  }: TemplateEditorProps) {
   return (
-    <div>
+    <div className='h-full'>
       <label className="block text-sm font-medium text-gray-700 mb-1">
         Handlebars Template Content (HTML Mode)
       </label>
-      <div className="border rounded overflow-hidden"> {/* Обертка для рамки */}
+      <div className="border rounded overflow-hidden h-[calc(100vh-200px)]"> {/* Обертка для рамки */}
         <Editor
-          height="400px" // Задаем высоту
+          height="100%" // Задаем высоту
+         
           language="html" // Используем режим HTML для подсветки Handlebars
           theme="vs-light" // Тема (vs-dark или своя)
           value={value}

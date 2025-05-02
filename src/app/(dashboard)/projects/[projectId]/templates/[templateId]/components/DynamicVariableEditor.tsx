@@ -28,9 +28,9 @@ export default function DynamicVariableEditor({ value, onChange, isValidJson }: 
       <label className="block text-sm font-medium text-gray-700 mb-1">
         Dynamic Variable Definitions (JSON format for Admins)
       </label>
-      <div className={`border rounded overflow-hidden ${!isValidJson ? 'border-red-500' : ''}`}>
+      <div className={`h-[calc(100vh-200px)] border rounded overflow-hidden ${!isValidJson ? 'border-red-500' : ''}`}>
         <Editor
-          height="250px"
+          height="100%"
           language="json"
           theme="vs-light"
           value={value}

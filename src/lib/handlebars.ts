@@ -1,10 +1,36 @@
-// src/lib/handlebars.ts
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-nocheck
 import Handlebars from 'handlebars';
 
 // Регистрируем хелперы Handlebars, если нужно
 // Handlebars.registerHelper('loud', function (aString) {
 //   return aString.toUpperCase()
 // })
+
+Handlebars.registerHelper('equals', function (orig: unknown, val: unknown, options) {
+  if (orig !== val && !options.hash.includeZero) {
+    return options.inverse(this);
+  } else {
+    return options.fn(this);
+  }
+});
+Handlebars.registerHelper('and', function (orig: unknown, val: unknown, options) {
+  console.log(orig, val);
+  if (orig && val) {
+    return options.fn(this);
+  } else {
+    return options.inverse(this);
+  }
+});
+
+Handlebars.registerHelper('or', function (orig: unknown, val: unknown, options) {
+  console.log(Boolean(orig), val);
+  if (orig || val) {
+    return options.fn(this);
+  } else {
+    return options.inverse(this);
+  }
+});
 
 export function renderHandlebarsTemplate(templateString: string, data: object): string {
   if (!templateString) {

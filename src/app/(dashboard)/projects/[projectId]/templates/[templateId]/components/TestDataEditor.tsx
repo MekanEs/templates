@@ -1,22 +1,22 @@
-// src/app/(dashboard)/projects/[projectId]/templates/[templateId]/components/VariableInput.tsx
+// src/app/(dashboard)/projects/[projectId]/templates/[templateId]/components/TestDataEditor.tsx
 'use client';
 import Editor, { OnChange } from '@monaco-editor/react';
 
-interface VariableInputProps {
+interface TestDataEditorProps {
   value: string; // JSON строка
   onChange: OnChange;
   isValidJson: boolean;
 }
 
-export default function VariableInput({ value, onChange, isValidJson,  }: VariableInputProps) {
+export default function TestDataEditor({ value, onChange, isValidJson,  }: TestDataEditorProps) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">
         Preview Data (JSON format)
       </label>
-      <div className={`border rounded overflow-hidden ${!isValidJson ? 'border-red-500' : ''}`}>
+      <div className={`h-[calc(100vh-200px)] border rounded overflow-hidden ${!isValidJson ? 'border-red-500' : ''}`}>
         <Editor
-          height="200px" // Высота поменьше для JSON
+          height="100%" // Высота поменьше для JSON
           language="json" // Режим JSON
           theme="vs-light"
           value={value}

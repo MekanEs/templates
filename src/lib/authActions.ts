@@ -81,6 +81,10 @@ export async function signupAction(
 
   const { email, password } = validatedFields.data;
 
+  if (!email.endsWith('@jetmail.cc')) {
+    return { message: 'Registration is only allowed for jetmail.cc addresses.', success: false };
+  }
+
   const { data, error } = await supabase.auth.signUp({
     email,
     password,

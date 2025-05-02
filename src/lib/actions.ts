@@ -37,73 +37,85 @@ const UpdateTemplateSchema = z.object({
 });
 
 export type ActionState = { message: string; success: boolean; errors?: z.ZodIssue[]; };
-
+const UpdateTemplateWithTagsSchema = UpdateTemplateSchema.extend({
+    tags: z.string().optional().transform(val =>
+        val ? val.split(',').map(tag => tag.trim().toLowerCase()).filter(Boolean) : []
+    ) // Преобразуем строку "tag1, tag2" в массив ["tag1", "tag2"] в нижнем регистре
+});
 export async function updateTemplateAction(
-  templateId: string,
-  prevState: ActionState,
-  formData: FormData
-): Promise<ActionState> {
-  const supabase = createClient();
-
-  // 1. Проверка прав (как и раньше)
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { message: 'Authentication required.', success: false };
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles').select('can_edit_templates').eq('id', user.id).single();
-  if (profileError || !profile?.can_edit_templates) return { message: 'Permission denied.', success: false };
-
-  // 2. Валидация данных
-  const rawFormData = {
-      templateContent: formData.get('templateContent'),
-      previewDataString: formData.get('previewDataString'),
-      dynamicVariablesString: formData.get('dynamicVariablesString'), // <<< Получаем новые данные
-  };
-  const validatedFields = UpdateTemplateSchema.safeParse(rawFormData);
-
-  if (!validatedFields.success) {
-     console.error("Validation Errors:", validatedFields.error.flatten().fieldErrors);
-     return {
-        message: 'Validation failed. Check the fields, especially Dynamic Variables format.',
-        success: false,
-        errors: validatedFields.error.issues,
-     };
+    templateId: string,
+    prevState: ActionState | null, // prevState теперь может быть null
+    formData: FormData
+  ): Promise<ActionState> {
+      const supabase = createClient();
+      const permissionCheck = await checkEditPermissions(supabase);
+      if (permissionCheck.errorState) return permissionCheck.errorState;
+  
+      // 2. Валидация данных, включая теги
+      const rawFormData = {
+          templateContent: formData.get('templateContent'),
+          previewDataString: formData.get('previewDataString'),
+          dynamicVariablesString: formData.get('dynamicVariablesString'),
+          tags: formData.get('tags'), // <<< Получаем строку тегов
+      };
+      const validatedFields = UpdateTemplateWithTagsSchema.safeParse(rawFormData);
+  
+      if (!validatedFields.success) {
+          console.error("Validation Errors:", validatedFields.error.flatten().fieldErrors);
+          const errors = validatedFields.error.flatten().fieldErrors;
+          // Собираем все сообщения об ошибках
+          const messages = Object.values(errors).flat().join(', ');
+          return {
+              message: `Validation failed: ${messages}. Check fields.`,
+              success: false,
+              errors: validatedFields.error.issues,
+          };
+      }
+  
+      const { templateContent, previewDataString, dynamicVariablesString, tags: desiredTagNames } = validatedFields.data;
+  
+      // 3. Парсинг JSON
+      let previewDataJson: object | null = null;
+      let dynamicVariablesJson: DynamicVariable[] | null = null;
+      try {
+          previewDataJson = JSON.parse(previewDataString);
+          if (dynamicVariablesString) {
+              dynamicVariablesJson = JSON.parse(dynamicVariablesString);
+          }
+      } catch (e) {
+          console.error("JSON Parsing Error:", e);
+          return { message: 'Failed to parse JSON data.', success: false };
+      }
+  
+      // --- Обработка тегов в транзакции ---
+      try {
+          // Используем функцию Supabase для транзакции
+          // Или можно обернуть в BEGIN/COMMIT если используете прямой SQL
+          const { error: transactionError } = await supabase.rpc('update_template_with_tags', {
+               p_template_id: templateId,
+               p_content: templateContent,
+               p_preview_data: previewDataJson,
+               p_dynamic_variables: dynamicVariablesJson,
+               p_tag_names: desiredTagNames // Передаем массив имен тегов
+          });
+  
+           if (transactionError) {
+               throw transactionError; // Передаем ошибку в catch блок
+           }
+  
+      } catch (error: unknown) {
+          console.error('Transaction Error updating template/tags:', error);
+          return { message: `Database Error: Failed to update template or tags. ${error instanceof Error ? error.message : 'Unknown error'}`, success: false };
+      }
+      // --- Конец обработки тегов ---
+  
+  
+      // 5. Ревалидация кеша
+      revalidatePath(`/projects/.*/templates/${templateId}`, 'page');
+      revalidatePath('/projects/[projectId]/templates', 'page'); // Ревалидируем и список
+  
+      return { message: 'Template updated successfully!', success: true };
   }
-
-  // 3. Парсинг JSON
-  let previewDataJson: object | null = null;
-  let dynamicVariablesJson: DynamicVariable[] | null = null; // <<< Переменная для dynamic_variables
-
-  try {
-    previewDataJson = JSON.parse(validatedFields.data.previewDataString);
-    // Парсим dynamic_variables, если строка не пустая
-    if (validatedFields.data.dynamicVariablesString) {
-        dynamicVariablesJson = JSON.parse(validatedFields.data.dynamicVariablesString);
-    }
-  } catch (e) {
-    console.log(e)
-     return { message: 'Failed to parse JSON data.', success: false };
-  }
-
-  // 4. Обновление данных в Supabase
-  const { error } = await supabase
-    .from('templates')
-    .update({
-      content: validatedFields.data.templateContent,
-      preview_data: previewDataJson,
-      dynamic_variables: dynamicVariablesJson, // <<< Сохраняем dynamic_variables
-    })
-    .eq('id', templateId);
-
-  if (error) {
-    console.error('Supabase update error:', error);
-    return { message: `Database Error: Failed to update template. ${error.message}`, success: false };
-  }
-
-  // 5. Ревалидация кеша
-  revalidatePath(`/projects/.*/templates/${templateId}`, 'page');
-
-  return { message: 'Template updated successfully!', success: true };
-}
 export async function duplicateTemplateAction(
     originalTemplateId: string,
     projectId: string, // Нам нужен ID проекта для ревалидации и редиректа

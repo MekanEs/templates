@@ -10,10 +10,18 @@ export interface Template {
   id: string;
   project_id: string;
   name: string;
-  content?: string | null; // Handlebars code
-  preview_data?: JSONObject | null; // JSON data for preview
+  content?: string | null;
+  preview_data?: JSONObject | null;
+  dynamic_variables?: DynamicVariable[] | null;
+  tags?: string[] | null; 
   created_at: string;
   updated_at: string;
+}
+
+// Добавим тип для самого тега, если понадобится
+export interface Tag {
+    id: string;
+    name: string;
 }
 type JSONValue = string | number | boolean | JSONObject | JSONArray;
 
